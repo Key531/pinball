@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>순서 정하기 핀볼 🎱 — 마블 레이스</title>
+<style>
+  :root{
+    --cream:#F7F3EA; --cream2:#EFE8D8; --ink:#37322C; --ink-soft:#6E655A;
+    --clay:#D97757; --clay-dark:#C15F3F; --line:#D8CFBD; --gold:#E4A951;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    background:radial-gradient(120% 90% at 50% 0%,#FBF8F1 0%,var(--cream) 55%,var(--cream2) 100%);
+    color:var(--ink); min-height:100vh; display:flex; justify-content:center; padding:22px 14px 60px;
+  }
+  .wrap{width:100%;max-width:520px}
+  header{text-align:center;margin-bottom:14px}
+  h1{font-family:Georgia,"Times New Roman",serif;font-size:28px;margin:0;letter-spacing:-.5px}
+  h1 .em{color:var(--clay)}
+  .sub{color:var(--ink-soft);font-size:13.5px;margin-top:5px}
+  .card{background:rgba(255,255,255,.72);border:1px solid var(--line);border-radius:18px;padding:18px;
+    box-shadow:0 8px 26px -18px rgba(55,50,44,.5);backdrop-filter:blur(6px)}
+  .modes{display:flex;gap:8px;background:var(--cream2);padding:5px;border-radius:12px;margin-bottom:14px}
+  .modes button{flex:1;border:none;background:transparent;padding:9px 6px;border-radius:9px;font-size:14px;
+    font-weight:600;color:var(--ink-soft);cursor:pointer;transition:.18s}
+  .modes button.on{background:#fff;color:var(--clay-dark);box-shadow:0 2px 8px -4px rgba(0,0,0,.25)}
+  label.fld{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin:0 0 6px 2px}
+  input[type=number],textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+    font-size:16px;font-family:inherit;background:#fff;color:var(--ink);resize:none}
+  input:focus,textarea:focus{outline:none;border-color:var(--clay)}
+  .hint{font-size:12px;color:var(--ink-soft);margin:6px 2px 0}
+  .row{display:flex;gap:10px;align-items:center;margin-top:14px}
+  .go{flex:1;border:none;border-radius:14px;padding:15px;cursor:pointer;
+    background:linear-gradient(180deg,var(--clay),var(--clay-dark));color:#fff;font-size:17px;font-weight:700;
+    letter-spacing:-.3px;box-shadow:0 10px 22px -12px var(--clay);transition:.15s}
+  .go:active{transform:translateY(1px)}
+  .ghost{border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:14px;
+    padding:15px 16px;font-size:15px;font-weight:600;cursor:pointer}
+  #stage{display:none;margin-top:16px}
+  .board-wrap{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line);
+    box-shadow:0 12px 30px -20px rgba(55,50,44,.6)}
+  canvas{display:block;width:100%;height:auto;background:linear-gradient(180deg,#FBF7EE,#EFE6D3)}
+  .statusbar{position:absolute;top:10px;left:0;right:0;display:flex;justify-content:center;pointer-events:none}
+  .pill{background:rgba(55,50,44,.82);color:#fff;font-size:13px;font-weight:600;padding:6px 14px;border-radius:999px;
+    backdrop-filter:blur(4px);max-width:92%;text-align:center}
+  #results{display:none;margin-top:16px}
+  .res-head{text-align:center;margin-bottom:10px}
+  .res-head h2{margin:0;font-family:Georgia,serif;font-size:22px}
+  .res-head p{margin:4px 0 0;color:var(--ink-soft);font-size:13px}
+  .rank{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:14px;margin-bottom:8px;
+    background:#fff;border:1px solid var(--line);animation:pop .35s cubic-bezier(.2,1.3,.4,1) both}
+  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
+  .rank .medal{font-size:22px;width:36px;text-align:center;flex:none;font-weight:700}
+  .rank .who{font-weight:700;font-size:16px}
+  .rank .cmt{color:var(--ink-soft);font-size:12.5px;margin-top:1px}
+  .rank .body{flex:1;min-width:0}
+  .rank .swatch{width:12px;height:12px;border-radius:4px;flex:none}
+  .rank.top1{background:linear-gradient(90deg,#FFF6E4,#FFFDF7);border-color:#EED9A8}
+  .foot{text-align:center;margin-top:16px;color:var(--ink-soft);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>순서 정하기 <span class="em">핀볼</span> 🎱</h1>
+    <div class="sub">마블들이 굴러떨어지며 운명의 순서를 정합니다. 실력? 그런 거 없어요.</div>
+  </header>
+
+  <div class="card" id="setup">
+    <div class="modes">
+      <button id="mNum" class="on" onclick="setMode('num')">🔢 숫자 (인원수)</button>
+      <button id="mName" onclick="setMode('name')">✍️ 이름 입력</button>
+    </div>
+    <div id="numPane">
+      <label class="fld">몇 명 / 몇 개의 순서를 정할까요?</label>
+      <input type="number" id="count" min="2" max="24" value="6">
+      <div class="hint">2 ~ 24. 마블에 1번부터 번호가 붙어요.</div>
+    </div>
+    <div id="namePane" style="display:none">
+      <label class="fld">이름을 줄바꿈으로 입력하세요</label>
+      <textarea id="names" rows="5" placeholder="성준&#10;민지&#10;영수&#10;지훈"></textarea>
+      <div class="hint">한 줄에 한 명. 2~24명까지.</div>
+    </div>
+    <div class="row">
+      <button class="go" id="startBtn" onclick="start()">공 굴리기! 🎳</button>
+      <button class="ghost" id="soundBtn" onclick="toggleSound()">🔈 소리</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div class="board-wrap">
+      <canvas id="cv" width="500" height="840"></canvas>
+      <div class="statusbar"><div class="pill" id="status">준비...</div></div>
+    </div>
+    <div class="row"><button class="ghost" style="flex:1" onclick="reset()">⏹ 그만두고 설정으로</button></div>
+  </div>
+
+  <div id="results" class="card">
+    <div class="res-head">
+      <h2 id="resTitle">🏁 최종 순위</h2>
+      <p id="resSub"></p>
+    </div>
+    <div id="rankList"></div>
+    <div class="row">
+      <button class="go" onclick="again()">🔁 한 번 더!</button>
+      <button class="ghost" onclick="reset()">⚙️ 설정 바꾸기</button>
+    </div>
+  </div>
+
+  <div class="foot">진짜 물리엔진(Matter.js)으로 굴러갑니다 · 굴릴 때마다 결과가 달라지고, 완전 무작위·완전 공정</div>
+</div>
+
+<script src="matter.min.js"></script>
+<script>
+/* ================= CONFIG ================= */
+const CV=document.getElementById('cv'), ctx=CV.getContext('2d');
+const statusEl=document.getElementById('status');
+const setupEl=document.getElementById('setup'), stageEl=document.getElementById('stage'), resultsEl=document.getElementById('results');
+const numPaneEl=document.getElementById('numPane'), namePaneEl=document.getElementById('namePane');
+const mNumEl=document.getElementById('mNum'), mNameEl=document.getElementById('mName');
+const CW=500, CH=840, FINISH=800;
+let mode='num', soundOn=false;
+let course=null, marbles=[], finishOrder=[], labels=[], colors=[], running=false, raf=null, startTime=0;
+
+const PALETTE=['#D97757','#5B8C7B','#E4A951','#7B6CA6','#4F8FBF','#C15F8F','#6FA86A','#D98C4A',
+  '#8A7FD9','#5FA9A0','#CC6666','#8FA84F','#B07FB0','#C99A3F','#5D7FB0','#A86F5F',
+  '#6FA8C9','#B05F7F','#7FA85F','#C97F5F','#5FA87F','#A85F9F','#5F7FA8','#A8905F'];
+
+/* ================= INPUT ================= */
+function setMode(m){
+  mode=m;
+  mNumEl.classList.toggle('on',m==='num'); mNameEl.classList.toggle('on',m==='name');
+  numPaneEl.style.display=m==='num'?'':'none'; namePaneEl.style.display=m==='name'?'':'none';
+}
+function getLabels(){
+  if(mode==='num'){
+    let n=parseInt(document.getElementById('count').value,10); if(isNaN(n))n=0;
+    n=Math.max(0,Math.min(24,n));
+    return Array.from({length:n},(_,i)=>String(i+1));
+  }
+  return document.getElementById('names').value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,24);
+}
+
+/* ================= SOUND ================= */
+let actx=null;
+function toggleSound(){
+  soundOn=!soundOn;
+  document.getElementById('soundBtn').textContent=soundOn?'🔊 소리 ON':'🔈 소리';
+  if(soundOn&&!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+}
+function blip(f,d=0.05,v=0.04){
+  if(!soundOn||!actx)return;
+  const o=actx.createOscillator(),g=actx.createGain();
+  o.type='sine';o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(actx.destination);
+  o.start();g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d);o.stop(actx.currentTime+d);
+}
+
+/* ================= COURSE (verified headless) ================= */
+function makeCourse(n){
+  const M=Matter, {Engine,Composite,Bodies,Body}=M;
+  const engine=Engine.create(); engine.gravity.y=1; engine.enableSleeping=false;
+  const world=engine.world;
+  const wallOpt={isStatic:true,restitution:0.3,friction:0.02};
+  const walls=[];
+  walls.push(Bodies.rectangle(-8,CH/2,16,CH*1.6,wallOpt));
+  walls.push(Bodies.rectangle(CW+8,CH/2,16,CH*1.6,wallOpt));
+  walls.push(Bodies.rectangle(120,590,220,14,{...wallOpt,angle:0.32}));
+  walls.push(Bodies.rectangle(380,660,220,14,{...wallOpt,angle:-0.32}));
+  walls.push(Bodies.rectangle(105,745,260,14,{...wallOpt,angle:0.55}));
+  walls.push(Bodies.rectangle(395,745,260,14,{...wallOpt,angle:-0.55}));
+
+  const pegs=[];
+  const top=150,rows=5,gapY=42;
+  for(let r=0;r<rows;r++){const y=top+r*gapY;const off=(r%2)?0.5:0;const cols=7;const span=CW-60;
+    for(let c=0;c<=cols;c++){const x=30+(c+off)*(span/cols);
+      if(x>18&&x<CW-18) pegs.push(Bodies.circle(x,y,7,{isStatic:true,restitution:0.4,friction:0.02}));}}
+
+  function spinner(cx,cy,arm,spokes){
+    const ps=[];
+    for(let i=0;i<spokes;i++){const a=(Math.PI*2/spokes)*i;
+      ps.push(Bodies.rectangle(cx+Math.cos(a)*arm/2,cy+Math.sin(a)*arm/2,arm,10,{angle:a}));}
+    ps.push(Bodies.circle(cx,cy,12));
+    const b=Body.create({parts:ps,isStatic:true,restitution:0.5,friction:0.02});
+    b.cx=cx; b.cy=cy; return b;
+  }
+  const sp1=spinner(150,400,120,3), sp2=spinner(350,500,120,3);
+  const spinners=[{b:sp1,sp:0.05},{b:sp2,sp:-0.05}];
+
+  Composite.add(world,walls); Composite.add(world,pegs); Composite.add(world,[sp1,sp2]);
+
+  const R=n>16?9:(n>10?11:13);
+  const mb=[];
+  for(let i=0;i<n;i++){
+    const body=Bodies.circle(50+Math.random()*(CW-100), -20-(i%5)*34-Math.random()*20, R,
+      {restitution:0.35,friction:0.02,frictionAir:0.004,density:0.002,label:'m'+i});
+    body.idx=i; body.stuckN=0;
+    mb.push({body,idx:i,r:R,done:false});
+  }
+  Composite.add(world,mb.map(o=>o.body));
+  return {engine,world,walls,pegs,spinners,marbles:mb,R};
+}
+
+/* ================= START / LOOP ================= */
+function start(){
+  labels=getLabels();
+  if(labels.length<2){alert('최소 2명(개) 이상 입력해주세요 🙏');return;}
+  colors=labels.map((_,i)=>PALETTE[i%PALETTE.length]);
+  finishOrder=[];
+  setupEl.style.display='none'; resultsEl.style.display='none'; stageEl.style.display='block';
+  course=makeCourse(labels.length); marbles=course.marbles;
+  running=true; startTime=performance.now();
+  statusEl.textContent=`🎳 ${labels.length}개의 마블, 출발!`;
+  cancelAnimationFrame(raf); loop();
+}
+
+function loop(){
+  const M=Matter,{Engine,Body,Composite}=M;
+  for(const s of course.spinners) Body.rotate(s.b, s.sp);
+  Engine.update(course.engine, 1000/60);
+
+  for(const o of marbles){
+    if(o.done) continue;
+    const b=o.body, sp=Math.hypot(b.velocity.x,b.velocity.y);
+    if(sp<0.25){ b.stuckN++; if(b.stuckN>36){ Body.setVelocity(b,{x:(Math.random()-0.5)*6,y:4+Math.random()*3}); b.stuckN=0; } }
+    else b.stuckN=0;
+    if(b.position.y>FINISH || b.position.y>CH+140){
+      o.done=true; finishOrder.push(o.idx);
+      Composite.remove(course.world,b);
+      blip(680+finishOrder.length*15,0.08,0.05);
+      const rank=finishOrder.length;
+      statusEl.textContent = rank<labels.length
+        ? `🏁 ${rank}/${labels.length} 도착 · 방금: ${labels[o.idx]}`
+        : `🏁 전원 도착!`;
+    }
+  }
+
+  render();
+
+  if(finishOrder.length>=labels.length){ running=false; setTimeout(showResults,650); return; }
+  raf=requestAnimationFrame(loop);
+}
+
+/* ================= RENDER ================= */
+function polyPath(v){ ctx.beginPath(); ctx.moveTo(v[0].x,v[0].y); for(let i=1;i<v.length;i++)ctx.lineTo(v[i].x,v[i].y); ctx.closePath(); }
+function drawPart(p,fill){
+  if(p.circleRadius){ ctx.beginPath(); ctx.arc(p.position.x,p.position.y,p.circleRadius,0,7); ctx.fillStyle=fill; ctx.fill(); }
+  else { polyPath(p.vertices); ctx.fillStyle=fill; ctx.fill(); }
+}
+function render(){
+  ctx.clearRect(0,0,CW,CH);
+  for(const w of course.walls){ drawPart(w,'#CBBDA3'); }
+  for(const p of course.pegs){
+    drawPart(p,'#B7A894');
+    ctx.beginPath(); ctx.arc(p.position.x-1.4,p.position.y-1.4,3,0,7); ctx.fillStyle='rgba(255,255,255,.5)'; ctx.fill();
+  }
+  for(const s of course.spinners){
+    const parts=s.b.parts.slice(1);
+    for(const p of parts){ drawPart(p, p.circleRadius? '#C15F3F':'#D97757'); }
+    ctx.beginPath(); ctx.arc(s.b.cx,s.b.cy,4,0,7); ctx.fillStyle='#F7F3EA'; ctx.fill();
+  }
+  ctx.setLineDash([9,7]); ctx.strokeStyle='#C15F3F'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(0,FINISH); ctx.lineTo(CW,FINISH); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='#C15F3F'; ctx.font='bold 13px sans-serif'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.fillText('🏁 FINISH', 14, FINISH-8);
+
+  for(const o of marbles){
+    if(o.done) continue;
+    const b=o.body, x=b.position.x, y=b.position.y, r=o.r, col=colors[o.idx];
+    ctx.beginPath(); ctx.ellipse(x,y+r*0.85,r*0.8,r*0.34,0,0,7); ctx.fillStyle='rgba(55,50,44,.13)'; ctx.fill();
+    const g=ctx.createRadialGradient(x-r*0.35,y-r*0.4,1,x,y,r);
+    g.addColorStop(0,'#fff'); g.addColorStop(0.25,col); g.addColorStop(1,shade(col,-26));
+    ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fillStyle=g; ctx.fill();
+    ctx.lineWidth=1.4; ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.stroke();
+    const lab=labels[o.idx];
+    ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=`700 ${lab.length>3?r*0.82:r*1.02}px sans-serif`;
+    ctx.fillText(lab.length>4?lab.slice(0,4):lab, x, y+0.5);
+  }
+  ctx.textBaseline='alphabetic';
+}
+function shade(hex,amt){
+  const n=parseInt(hex.slice(1),16);
+  let r=Math.max(0,Math.min(255,(n>>16)+amt)), g=Math.max(0,Math.min(255,((n>>8)&255)+amt)), b=Math.max(0,Math.min(255,(n&255)+amt));
+  return '#'+(r<<16|g<<8|b).toString(16).padStart(6,'0');
+}
+
+/* ================= RESULTS + HUMOR ================= */
+const FIRST=['오늘의 승자 👑 로또도 사보세요','압도적 1등! 실력이라 우기는 중','금메달 획득 🥇 밥은 이 사람이 삽니다','1등의 여유, 뒤를 안 돌아봤다','우승 소감 준비하세요 🎤'];
+const SECOND=['아깝다! 0.1초 차이 😤','은메달도 훌륭합니다 🥈','1등 바로 뒤, 가장 배아픈 자리'];
+const THIRD=['동메달 🥉 시상대 막차 탑승','3등도 시상대는 시상대다'];
+const MID=['무난하게 중간, 인생 뭐 있나','치열했으나 결국 여기','아쉽게 놓친 시상대','존재감 있는 순위','조용히 제 갈 길 감','한 끗 차이의 미학','중력을 거스르지 못했다','평타는 쳤다','드라마는 없었지만 성실했다','반전을 노렸으나 실패'];
+const LAST=['꼴찌의 품격 🐢 천천히 가도 도착은 함','마지막까지 최선을... 다한 건 아님','설거지 당첨을 축하합니다 🍽️','늦게 온 게 아니라 대기만성형','마지막 주자, 오늘의 주인공(?)'];
+function pick(a){return a[Math.floor(Math.random()*a.length)];}
+function commentFor(rank,total){
+  if(rank===1)return pick(FIRST); if(rank===total)return pick(LAST);
+  if(rank===2)return pick(SECOND); if(rank===3)return pick(THIRD); return pick(MID);
+}
+function medalFor(rank,total){
+  if(rank===1)return'🥇'; if(rank===2)return'🥈'; if(rank===3)return'🥉'; if(rank===total)return'🐢'; return rank+'등';
+}
+function showResults(){
+  const list=document.getElementById('rankList'); list.innerHTML='';
+  const total=finishOrder.length;
+  const secs=((performance.now()-startTime)/1000).toFixed(1);
+  finishOrder.forEach((idx,i)=>{
+    const rank=i+1, div=document.createElement('div');
+    div.className='rank'+(rank===1?' top1':''); div.style.animationDelay=(i*0.06)+'s';
+    div.innerHTML=`<div class="medal">${medalFor(rank,total)}</div>
+      <div class="swatch" style="background:${colors[idx]}"></div>
+      <div class="body"><div class="who">${rank}등 · ${escapeHtml(labels[idx])}</div>
+      <div class="cmt">${commentFor(rank,total)}</div></div>`;
+    list.appendChild(div);
+  });
+  document.getElementById('resSub').textContent=`🏆 ${labels[finishOrder[0]]} 님 우승! · ${total}명 · ${secs}초 레이스`;
+  resultsEl.style.display='block';
+  resultsEl.scrollIntoView({behavior:'smooth',block:'nearest'});
+  blip(880,0.15,0.05);
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ================= CONTROLS ================= */
+function again(){ start(); }
+function reset(){
+  cancelAnimationFrame(raf); running=false;
+  stageEl.style.display='none'; resultsEl.style.display='none'; setupEl.style.display='block';
+}
+</script>
+</body>
+</html>
