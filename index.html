@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEON PINBALL — 순서 정하기 마블 레이스</title>
+<title>Pinball Race — yourKey</title>
 <style>
   :root{
     --pink:#FF2E97; --cyan:#16E0FF; --purple:#B14BFF; --green:#39FF14; --gold:#FFC21A; --orange:#FF6A00;
@@ -28,6 +28,8 @@
   h1 .em{color:var(--cyan);text-shadow:0 0 6px #fff,0 0 18px var(--cyan),0 0 36px var(--cyan),0 0 64px var(--cyan)}
   @keyframes flick{0%,92%,100%{opacity:1}93%{opacity:.62}94%{opacity:1}96%{opacity:.7}97%{opacity:1}}
   .sub{color:var(--ink-soft);font-size:12.5px;margin-top:8px;letter-spacing:2px;text-transform:uppercase}
+  .brand{display:block;height:30px;width:auto;margin:0 auto 12px;
+    filter:drop-shadow(0 0 8px rgba(22,224,255,.75)) drop-shadow(0 0 18px rgba(255,46,151,.45))}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;
     box-shadow:0 0 30px -6px rgba(177,75,255,.55),inset 0 0 0 1px rgba(255,255,255,.05);backdrop-filter:blur(8px)}
   .modes{display:flex;gap:8px;background:#0c0718;padding:5px;border-radius:12px;margin-bottom:14px;border:1px solid rgba(127,233,255,.18)}
@@ -71,8 +73,9 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>NEON <span class="em">PINBALL</span></h1>
-    <div class="sub">◆ 순서 정하기 마블 레이스 ◆</div>
+    <img class="brand" src="yourkey-logo.png" alt="yourKey">
+    <h1><span class="em">Pinball</span> Race</h1>
+    <div class="sub">◆ 순서 정하기 · 마블 레이스 ◆</div>
   </header>
 
   <div class="card" id="setup">
@@ -123,7 +126,7 @@
     </div>
   </div>
 
-  <div class="foot">진짜 물리엔진(Matter.js) 기반 · 매번 결과가 다르고, 완전 무작위·완전 공정</div>
+  <div class="foot">진짜 물리엔진(Matter.js) 기반 · 완전 무작위·완전 공정 · powered by <b style="color:#7FE9FF">yourKey</b></div>
 </div>
 
 <script src="matter.min.js"></script>
