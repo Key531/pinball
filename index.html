@@ -7,7 +7,7 @@
 <style>
   :root{
     --cream:#F7F3EA; --cream2:#EFE8D8; --ink:#2E2A24; --ink-soft:#7A7063;
-    --clay:#D97757; --clay-dark:#C15F3F; --line:#E0D8C7; --gold:#E4A951; --track:#E7DcC6;
+    --clay:#D97757; --clay-dark:#C15F3F; --line:#E0D8C7; --gold:#E4A951;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
@@ -63,7 +63,7 @@
 <div class="wrap">
   <header>
     <h1>순서 정하기 <span class="em">핀볼</span> 🎱</h1>
-    <div class="sub">마블들이 트랙을 질주하며 순서를 정합니다. 실력? 그런 거 없어요.</div>
+    <div class="sub">못밭·범퍼·스피너를 뚫고 결승선까지! 순위는 끝까지 뒤집힙니다.</div>
   </header>
 
   <div class="card" id="setup">
@@ -111,117 +111,100 @@
 
 <script src="matter.min.js"></script>
 <script>
-/* ===================== SETUP / CONST ===================== */
+/* ===================== CONST ===================== */
 const CV=document.getElementById('cv'), ctx=CV.getContext('2d');
-const VW=CV.width, VH=CV.height;                 // viewport (screen) size
-const WORLD_W=520;
-const SCALE=VW/WORLD_W;                            // world -> screen
-const VIS_H=VH/SCALE;                              // visible world height
-const setupEl=id=>document.getElementById(id);
-const elSetup=setupEl('setup'), elStage=setupEl('stage'), elResults=setupEl('results');
-const elNumPane=setupEl('numPane'), elNamePane=setupEl('namePane'), elMNum=setupEl('mNum'), elMName=setupEl('mName');
+const VW=CV.width, VH=CV.height;
+const WORLD_W=560;
+const SCALE=VW/WORLD_W;
+const VIS_H=VH/SCALE;
+const $=id=>document.getElementById(id);
+const elSetup=$('setup'), elStage=$('stage'), elResults=$('results');
+const elNumPane=$('numPane'), elNamePane=$('namePane'), elMNum=$('mNum'), elMName=$('mName');
 
 let mode='num', soundOn=false;
 let course=null, marbles=[], finishOrder=[], labels=[], colors=[], running=false, raf=null, startTime=0;
 let camY=0, camTarget=0, sparks=[], confetti=[], commentary=[], lastLeader=-1, floaters=[];
+let prevRank={}, rankCheck=0, lastCallout=0, finalRushSaid=false;
 
 const PALETTE=['#D97757','#5B8C7B','#E4A951','#7B6CA6','#4F8FBF','#C15F8F','#6FA86A','#D98C4A',
   '#8A7FD9','#5FA9A0','#CC6666','#8FA84F','#B07FB0','#C99A3F','#5D7FB0','#A86F5F',
   '#6FA8C9','#B05F7F','#7FA85F','#C97F5F','#5FA87F','#A85F9F','#5F7FA8','#A8905F'];
 
 /* ===================== INPUT ===================== */
-function setMode(m){
-  mode=m;
+function setMode(m){ mode=m;
   elMNum.classList.toggle('on',m==='num'); elMName.classList.toggle('on',m==='name');
-  elNumPane.style.display=m==='num'?'':'none'; elNamePane.style.display=m==='name'?'':'none';
-}
+  elNumPane.style.display=m==='num'?'':'none'; elNamePane.style.display=m==='name'?'':'none'; }
 function getLabels(){
-  if(mode==='num'){
-    let n=parseInt(setupEl('count').value,10); if(isNaN(n))n=0;
-    n=Math.max(0,Math.min(24,n));
-    return Array.from({length:n},(_,i)=>String(i+1));
-  }
-  return setupEl('names').value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,24);
+  if(mode==='num'){ let n=parseInt($('count').value,10); if(isNaN(n))n=0; n=Math.max(0,Math.min(24,n));
+    return Array.from({length:n},(_,i)=>String(i+1)); }
+  return $('names').value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,24);
 }
 
 /* ===================== SOUND ===================== */
 let actx=null, lastHit=0;
-function toggleSound(){
-  soundOn=!soundOn;
-  setupEl('soundBtn').textContent=soundOn?'🔊 소리 ON':'🔈 소리';
-  if(soundOn&&!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
-}
-function tone(f,d=0.05,v=0.04,type='sine'){
-  if(!soundOn||!actx)return;
+function toggleSound(){ soundOn=!soundOn; $('soundBtn').textContent=soundOn?'🔊 소리 ON':'🔈 소리';
+  if(soundOn&&!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); }
+function tone(f,d=0.05,v=0.04,type='sine'){ if(!soundOn||!actx)return;
   const o=actx.createOscillator(),g=actx.createGain();
   o.type=type;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(actx.destination);
-  o.start();g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d);o.stop(actx.currentTime+d);
-}
+  o.start();g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d);o.stop(actx.currentTime+d); }
 
-/* ===================== TRACK (verified headless) ===================== */
+/* ===================== COURSE (verified: 100% completion n=2..24) ===================== */
 function makeCourse(n){
   const M=Matter,{Engine,Composite,Bodies,Body}=M;
   const engine=Engine.create(); engine.gravity.y=1; engine.enableSleeping=false;
   const world=engine.world;
   const wo={isStatic:true,restitution:0.2,friction:0.02};
-  const walls=[], spinners=[], rampSegs=[];
-  function bar(x1,y1,x2,y2,th=16){
-    const cx=(x1+x2)/2,cy=(y1+y2)/2,len=Math.hypot(x2-x1,y2-y1),ang=Math.atan2(y2-y1,x2-x1);
-    return Bodies.rectangle(cx,cy,len,th,{...wo,angle:ang});
-  }
-  const W=WORLD_W, LEVELS=9, LEVEL_H=250, TOP=220, MARGIN=44, GAP=130, DROP=160;
-  for(let L=0;L<LEVELS;L++){
-    const topY=TOP+L*LEVEL_H, rightward=(L%2===0);
-    let x1,y1,x2,y2;
-    if(rightward){x1=MARGIN;y1=topY;x2=W-MARGIN-GAP;y2=topY+DROP;}
-    else{x1=W-MARGIN;y1=topY;x2=MARGIN+GAP;y2=topY+DROP;}
-    walls.push(bar(x1,y1,x2,y2,16)); rampSegs.push([x1,y1,x2,y2,'ramp']);
-    walls.push(bar(x1,y1-30,x1,y1-2,10)); rampSegs.push([x1,y1-30,x1,y1-2,'lip']);
-  }
-  const H=TOP+LEVELS*LEVEL_H+280;
-  walls.push(Bodies.rectangle(-8,H/2,16,H*1.2,wo));
-  walls.push(Bodies.rectangle(W+8,H/2,16,H*1.2,wo));
-  const goalY=TOP+LEVELS*LEVEL_H+140;
-  walls.push(bar(0,goalY-60,W/2-70,goalY+40,16)); rampSegs.push([0,goalY-60,W/2-70,goalY+40,'ramp']);
-  walls.push(bar(W,goalY-60,W/2+70,goalY+40,16)); rampSegs.push([W,goalY-60,W/2+70,goalY+40,'ramp']);
-  const FINISH=goalY+80;
+  const walls=[],pegs=[],bumpers=[],spinners=[],segs=[];
+  function bar(x1,y1,x2,y2,th=15){const cx=(x1+x2)/2,cy=(y1+y2)/2,len=Math.hypot(x2-x1,y2-y1),ang=Math.atan2(y2-y1,x2-x1);
+    walls.push(Bodies.rectangle(cx,cy,len,th,{...wo,angle:ang}));segs.push([x1,y1,x2,y2]);}
+  function peg(x,y,r=7){pegs.push({x,y,r}); const b=Bodies.circle(x,y,r,{isStatic:true,restitution:0.5,friction:0.02,label:'peg'});world._peg=b;Composite.add(world,b);}
+  function pegField(y0,rows,cols,gapY){for(let r=0;r<rows;r++){const y=y0+r*gapY;const off=(r%2)?0.5:0;const span=WORLD_W-60;
+    for(let c=0;c<=cols;c++){const x=30+(c+off)*(span/cols);if(x>20&&x<WORLD_W-20)peg(x,y);}}}
+  function bumper(x,y,r=18){bumpers.push({x,y,r});Composite.add(world,Bodies.circle(x,y,r,{isStatic:true,restitution:1.25,friction:0.004,label:'bump'}));}
+  function spinner(cx,cy,arm,sp,spokes=4){const ps=[];for(let i=0;i<spokes;i++){const a=(Math.PI*2/spokes)*i;ps.push(Bodies.rectangle(cx+Math.cos(a)*arm/2,cy+Math.sin(a)*arm/2,arm,9,{angle:a}));}
+    ps.push(Bodies.circle(cx,cy,10));const b=Body.create({parts:ps,isStatic:true,restitution:0.55,friction:0.02});b.cx=cx;b.cy=cy;b.arm=arm;b.spokes=spokes;spinners.push({b,sp,ang:0});}
 
-  function spinner(cx,cy,arm,sp){
-    const ps=[];for(let i=0;i<3;i++){const a=(Math.PI*2/3)*i;ps.push(Bodies.rectangle(cx+Math.cos(a)*arm/2,cy+Math.sin(a)*arm/2,arm,9,{angle:a}));}
-    ps.push(Bodies.circle(cx,cy,10));
-    const b=Body.create({parts:ps,isStatic:true,restitution:0.4,friction:0.02});b.cx=cx;b.cy=cy;b.arm=arm;
-    return {b,sp,ang:0};
-  }
-  [[195,742,84,0.08],[325,992,84,-0.08],[325,1492,84,0.08],[325,1992,84,-0.08]]
-    .forEach(s=>spinners.push(spinner(s[0],s[1],s[2],s[3])));
+  let y=120;
+  pegField(y,4,9,42); y+=4*42+40;
+  spinner(160,y,110,0.07); spinner(400,y,110,-0.07); y+=150;
+  pegField(y,4,9,42); y+=4*42+30;
+  bumper(150,y); bumper(410,y); bumper(280,y+60,22); y+=150;
+  pegField(y,4,10,40); y+=4*40+30;
+  spinner(280,y,130,0.09); y+=150;
+  pegField(y,4,9,42); y+=4*42+40;
+  const bowlTop=y, exit=32;
+  bar(0,bowlTop,WORLD_W/2-exit/2-4,bowlTop+190,15);
+  bar(WORLD_W,bowlTop,WORLD_W/2+exit/2+4,bowlTop+190,15);
+  spinner(WORLD_W/2,bowlTop+150,160,0.16,4);
+  const FINISH=bowlTop+250;
+  const H=FINISH+120;
+  walls.push(Bodies.rectangle(-8,H/2,16,H*1.3,wo));
+  walls.push(Bodies.rectangle(WORLD_W+8,H/2,16,H*1.3,wo));
+  Composite.add(world,walls); Composite.add(world,spinners.map(s=>s.b));
 
-  Composite.add(world,walls);
-  Composite.add(world,spinners.map(s=>s.b));
-
-  const R=n>16?11:(n>10?12:13);
+  const R=n>16?10:(n>10?11:12);
   const mb=[];
-  for(let i=0;i<n;i++){
-    const body=Bodies.circle(MARGIN+20+Math.random()*(W-2*MARGIN-40),40-(i%6)*30-Math.random()*20,R,
-      {restitution:0.28,friction:0.02,frictionAir:0.006,density:0.002,label:'m'+i});
-    body.idx=i; mb.push({body,idx:i,r:R,done:false,bestY:-1e9,noProg:0});
-  }
+  for(let i=0;i<n;i++){const body=Bodies.circle(40+Math.random()*(WORLD_W-80),20-(i%6)*30-Math.random()*20,R,
+    {restitution:0.35,friction:0.02,frictionAir:0.005,density:0.002,label:'m'+i});body.idx=i;mb.push({body,idx:i,r:R,done:false,bestY:-1e9,noProg:0});}
   Composite.add(world,mb.map(o=>o.body));
 
-  // collision sparks + hit sounds
   M.Events.on(engine,'collisionStart',ev=>{
     for(const p of ev.pairs){
       const a=p.bodyA,b=p.bodyB;
       const mv=(a.label&&a.label[0]==='m')?a:((b.label&&b.label[0]==='m')?b:null);
-      if(!mv) continue;
+      const other=mv===a?b:a; if(!mv) continue;
       const v=Math.hypot(mv.velocity.x,mv.velocity.y);
-      if(v>3){
-        sparks.push({x:mv.position.x,y:mv.position.y,vx:(Math.random()-.5)*2,vy:-Math.random()*2,life:14,c:'#fff'});
-        const now=performance.now();
-        if(now-lastHit>28){ tone(300+Math.random()*400,0.03,0.02); lastHit=now; }
+      if(other.label==='bump'){
+        for(let k=0;k<5;k++) sparks.push({x:mv.position.x,y:mv.position.y,vx:(Math.random()-.5)*4,vy:-Math.random()*3,life:16,c:'#E4A951'});
+        const now=performance.now(); if(now-lastHit>40){ tone(180+Math.random()*80,0.09,0.05,'square'); lastHit=now; }
+      } else if(v>3){
+        sparks.push({x:mv.position.x,y:mv.position.y,vx:(Math.random()-.5)*2,vy:-Math.random()*2,life:12,c:'#fff'});
+        const now=performance.now(); if(now-lastHit>34){ tone(320+Math.random()*380,0.03,0.018); lastHit=now; }
       }
     }
   });
-  return {engine,world,walls,spinners,marbles:mb,rampSegs,W,H,FINISH,goalY,R};
+  return {engine,world,walls,pegs,bumpers,spinners,segs,marbles:mb,W:WORLD_W,H,FINISH,R,bowlTop};
 }
 
 /* ===================== START / LOOP ===================== */
@@ -230,13 +213,13 @@ function start(){
   if(labels.length<2){alert('최소 2명(개) 이상 입력해주세요 🙏');return;}
   colors=labels.map((_,i)=>PALETTE[i%PALETTE.length]);
   finishOrder=[]; sparks=[]; confetti=[]; floaters=[]; commentary=[]; lastLeader=-1;
+  prevRank={}; rankCheck=0; lastCallout=0; finalRushSaid=false;
   elSetup.style.display='none'; elResults.style.display='none'; elStage.style.display='block';
   course=makeCourse(labels.length); marbles=course.marbles;
   camY=0; camTarget=0; running=true; startTime=performance.now();
   say(pick(START_LINES));
   cancelAnimationFrame(raf); loop();
 }
-
 function say(msg){ commentary.push({t:msg,at:performance.now()}); if(commentary.length>4) commentary.shift(); }
 
 function loop(){
@@ -244,41 +227,60 @@ function loop(){
   for(const s of course.spinners){ Body.rotate(s.b,s.sp); s.ang+=s.sp; }
   Engine.update(course.engine,1000/60);
 
-  // progress + anti-stuck + finish
   for(const o of marbles){
     if(o.done) continue;
     const b=o.body;
     if(b.position.y>o.bestY+2){o.bestY=b.position.y;o.noProg=0;}
-    else{o.noProg++; if(o.noProg>80){Body.setVelocity(b,{x:(Math.random()-0.5)*7,y:4+Math.random()*4});o.noProg=0;}}
+    else{o.noProg++; if(o.noProg>75){Body.setVelocity(b,{x:(Math.random()-0.5)*8,y:4+Math.random()*4});o.noProg=0;}}
     if(b.position.y>course.FINISH || b.position.y>course.H+160){
       o.done=true; finishOrder.push(o.idx);
       Composite.remove(course.world,b);
       const rank=finishOrder.length;
-      floaters.push({txt:`${rank}등 ${labels[o.idx]}!`,x:b.position.x,y:course.FINISH-20,life:70,c:colors[o.idx]});
-      burstConfetti();
-      tone(560+rank*24,0.12,0.05,'triangle');
+      floaters.push({txt:`${rank}등 ${labels[o.idx]}!`,x:b.position.x,y:course.FINISH-18,life:70,c:colors[o.idx]});
+      burstConfetti(); tone(560+rank*24,0.12,0.05,'triangle');
       say(arrivalLine(rank,labels.length,labels[o.idx]));
     }
   }
 
-  // leader change commentary
+  // camera + live commentary
   const act=marbles.filter(o=>!o.done);
   if(act.length){
     let lead=act[0]; for(const o of act) if(o.body.position.y>lead.body.position.y) lead=o;
     if(lead.idx!==lastLeader && finishOrder.length<labels.length){
-      if(lastLeader!==-1 && Math.random()<0.6) say(`선두 교체! ${labels[lead.idx]} 치고 나갑니다 🏎️`);
+      if(lastLeader!==-1 && Math.random()<0.55) say(`선두 교체! ${labels[lead.idx]} 치고 나갑니다 🏎️`);
       lastLeader=lead.idx;
     }
     camTarget=lead.body.position.y - VIS_H*0.42;
   }
   camTarget=Math.max(0,Math.min(course.H-VIS_H,camTarget));
   camY += (camTarget-camY)*0.12;
+  detectUpsets();
+
+  // final-2 tension
+  if(!finalRushSaid && labels.length>=4 && finishOrder.length===labels.length-2){
+    say('마지막 2개! 결승선 앞 대혈투 🔥'); finalRushSaid=true;
+  }
 
   updateParticles();
   render();
 
   if(finishOrder.length>=labels.length){ running=false; setTimeout(showResults,750); return; }
   raf=requestAnimationFrame(loop);
+}
+
+function detectUpsets(){
+  rankCheck++; if(rankCheck<16) return; rankCheck=0;
+  const order=liveOrder(); const now=performance.now(); const n=labels.length;
+  const cur={}; order.forEach((o,i)=>cur[o.idx]=i);
+  if(Object.keys(prevRank).length){
+    for(const o of order){
+      const before=prevRank[o.idx], after=cur[o.idx];
+      if(before!==undefined && !o.done && before-after>=Math.max(3,Math.ceil(n/3)) && after<=2 && now-lastCallout>1400){
+        say(pick(UPSET_LINES).replace('{n}',labels[o.idx])); lastCallout=now; break;
+      }
+    }
+  }
+  prevRank=cur;
 }
 
 /* ===================== PARTICLES ===================== */
@@ -288,12 +290,9 @@ function burstConfetti(){
     c:PALETTE[(Math.random()*PALETTE.length)|0],r:2+Math.random()*3,rot:Math.random()*6});
 }
 function updateParticles(){
-  for(const s of sparks){ s.x+=s.vx; s.y+=s.vy; s.vy+=0.15; s.life--; }
-  sparks=sparks.filter(s=>s.life>0);
-  for(const c of confetti){ c.x+=c.vx; c.y+=c.vy; c.vy+=0.18; c.rot+=0.2; c.life--; }
-  confetti=confetti.filter(c=>c.life>0);
-  for(const f of floaters){ f.y-=0.5; f.life--; }
-  floaters=floaters.filter(f=>f.life>0);
+  for(const s of sparks){ s.x+=s.vx; s.y+=s.vy; s.vy+=0.15; s.life--; } sparks=sparks.filter(s=>s.life>0);
+  for(const c of confetti){ c.x+=c.vx; c.y+=c.vy; c.vy+=0.18; c.rot+=0.2; c.life--; } confetti=confetti.filter(c=>c.life>0);
+  for(const f of floaters){ f.y-=0.5; f.life--; } floaters=floaters.filter(f=>f.life>0);
 }
 
 /* ===================== RENDER ===================== */
@@ -305,39 +304,45 @@ function shade(hex,amt){const n=parseInt(hex.slice(1),16);
 
 function render(){
   ctx.clearRect(0,0,VW,VH);
-  ctx.save();
-  ctx.scale(SCALE,SCALE);
-  ctx.translate(0,-camY);
+  ctx.save(); ctx.scale(SCALE,SCALE); ctx.translate(0,-camY);
+  const yTop=camY-20, yBot=camY+VIS_H+20;   // cull
 
-  // ramps
-  for(const s of course.rampSegs){
-    if(s[4]==='lip') seg(s[0],s[1],s[2],s[3],9,'#D9CCB2');
-    else { seg(s[0],s[1],s[2],s[3],17,'#CBBB9C'); seg(s[0],s[1],s[2],s[3],9,'#E4D8BF'); }
-  }
+  // walls (bowl + sides drawn as thick segs)
+  for(const s of course.segs){ if(Math.max(s[1],s[3])<yTop||Math.min(s[1],s[3])>yBot)continue;
+    seg(s[0],s[1],s[2],s[3],16,'#CBBB9C'); seg(s[0],s[1],s[2],s[3],9,'#E4D8BF'); }
+  // pegs
+  ctx.fillStyle='#B7A894';
+  for(const p of course.pegs){ if(p.y<yTop||p.y>yBot)continue; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); }
+  ctx.fillStyle='rgba(255,255,255,.45)';
+  for(const p of course.pegs){ if(p.y<yTop||p.y>yBot)continue; ctx.beginPath(); ctx.arc(p.x-1.4,p.y-1.6,2.4,0,7); ctx.fill(); }
+  // bumpers (pinball style)
+  for(const bm of course.bumpers){ if(bm.y<yTop||bm.y>yBot)continue;
+    ctx.beginPath(); ctx.arc(bm.x,bm.y,bm.r+3,0,7); ctx.fillStyle='rgba(228,169,81,.25)'; ctx.fill();
+    const g=ctx.createRadialGradient(bm.x-bm.r*0.3,bm.y-bm.r*0.3,1,bm.x,bm.y,bm.r);
+    g.addColorStop(0,'#F5D98A'); g.addColorStop(1,'#D89A3A');
+    ctx.beginPath(); ctx.arc(bm.x,bm.y,bm.r,0,7); ctx.fillStyle=g; ctx.fill();
+    ctx.lineWidth=2.5; ctx.strokeStyle='#C1852B'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(bm.x,bm.y,bm.r*0.4,0,7); ctx.fillStyle='#FBEFCB'; ctx.fill(); }
   // spinners
-  for(const s of course.spinners){
-    const b=s.b;
+  for(const s of course.spinners){ const b=s.b; if(b.cy<yTop-100||b.cy>yBot+100)continue;
     ctx.save(); ctx.translate(b.cx,b.cy); ctx.rotate(s.ang);
-    for(let i=0;i<3;i++){ ctx.save(); ctx.rotate((Math.PI*2/3)*i);
-      ctx.fillStyle='#D97757'; ctx.beginPath();
-      const arm=b.arm; ctx.roundRect? ctx.roundRect(-4.5,-arm/2,9,arm,4):ctx.rect(-4.5,-arm/2,9,arm);
-      ctx.fill(); ctx.restore(); }
+    for(let i=0;i<b.spokes;i++){ ctx.save(); ctx.rotate((Math.PI*2/b.spokes)*i);
+      ctx.fillStyle='#D97757';
+      if(ctx.roundRect){ctx.beginPath();ctx.roundRect(-4.5,-b.arm/2,9,b.arm,4);ctx.fill();}
+      else ctx.fillRect(-4.5,-b.arm/2,9,b.arm);
+      ctx.restore(); }
     ctx.fillStyle='#C15F3F'; ctx.beginPath(); ctx.arc(0,0,11,0,7); ctx.fill();
     ctx.fillStyle='#F7F3EA'; ctx.beginPath(); ctx.arc(0,0,4,0,7); ctx.fill();
-    ctx.restore();
-  }
-  // finish line
+    ctx.restore(); }
+  // finish
   ctx.setLineDash([10,8]); seg(0,course.FINISH,WORLD_W,course.FINISH,3,'#C15F3F'); ctx.setLineDash([]);
   ctx.fillStyle='#C15F3F'; ctx.font='bold 15px sans-serif'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
   ctx.fillText('🏁 FINISH', 12, course.FINISH-9);
-
-  // world sparks
-  for(const s of sparks){ ctx.globalAlpha=s.life/14; ctx.fillStyle=s.c;
-    ctx.beginPath(); ctx.arc(s.x,s.y,1.6,0,7); ctx.fill(); } ctx.globalAlpha=1;
-
+  // sparks
+  for(const s of sparks){ ctx.globalAlpha=Math.max(0,s.life/16); ctx.fillStyle=s.c;
+    ctx.beginPath(); ctx.arc(s.x,s.y,1.8,0,7); ctx.fill(); } ctx.globalAlpha=1;
   // marbles
-  for(const o of marbles){
-    if(o.done) continue;
+  for(const o of marbles){ if(o.done)continue;
     const b=o.body,x=b.position.x,y=b.position.y,r=o.r,col=colors[o.idx];
     ctx.beginPath(); ctx.ellipse(x,y+r*0.85,r*0.8,r*0.32,0,0,7); ctx.fillStyle='rgba(46,42,36,.15)'; ctx.fill();
     const g=ctx.createRadialGradient(x-r*0.35,y-r*0.4,1,x,y,r);
@@ -346,61 +351,50 @@ function render(){
     ctx.lineWidth=1.4; ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.stroke();
     const lab=labels[o.idx];
     ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.font=`800 ${lab.length>3?r*0.8:r*1.0}px sans-serif`;
-    ctx.fillText(lab.length>4?lab.slice(0,4):lab,x,y+0.5);
-  }
-  // floaters (world space)
+    ctx.font=`800 ${lab.length>3?r*0.78:r*1.0}px sans-serif`;
+    ctx.fillText(lab.length>4?lab.slice(0,4):lab,x,y+0.5); }
+  // floaters
   for(const f of floaters){ ctx.globalAlpha=Math.min(1,f.life/30); ctx.fillStyle=f.c;
     ctx.font='800 20px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.strokeText(f.txt,f.x,f.y); ctx.fillText(f.txt,f.x,f.y); }
   ctx.globalAlpha=1; ctx.textBaseline='alphabetic';
-
   ctx.restore();
 
   drawHUD();
 }
 
-/* ===================== HUD (screen space) ===================== */
+/* ===================== HUD ===================== */
 function drawHUD(){
-  // ---- minimap strip (right) ----
-  const mmW=26, mmX=VW-mmW-8, mmY=10, mmH=VH-150;
-  const ms=mmH/course.H;
+  const mmW=26, mmX=VW-mmW-8, mmY=10, mmH=VH-150, ms=mmH/course.H;
   ctx.fillStyle='rgba(255,255,255,.55)'; roundRect(mmX,mmY,mmW,mmH,8); ctx.fill();
   ctx.strokeStyle='rgba(46,42,36,.12)'; ctx.lineWidth=1; roundRect(mmX,mmY,mmW,mmH,8); ctx.stroke();
-  // ramps
-  ctx.strokeStyle='rgba(120,105,80,.35)'; ctx.lineWidth=1.4;
-  for(const s of course.rampSegs){ if(s[4]==='lip')continue;
-    ctx.beginPath(); ctx.moveTo(mmX+ (s[0]/course.W)*mmW, mmY+s[1]*ms); ctx.lineTo(mmX+(s[2]/course.W)*mmW, mmY+s[3]*ms); ctx.stroke(); }
-  // camera viewport
-  ctx.strokeStyle='rgba(217,119,87,.8)'; ctx.lineWidth=1.4;
+  // faint peg cloud + bumpers
+  ctx.fillStyle='rgba(120,105,80,.25)';
+  for(const p of course.pegs){ ctx.fillRect(mmX+(p.x/course.W)*mmW-0.5, mmY+p.y*ms-0.5, 1,1); }
+  ctx.fillStyle='rgba(216,154,58,.6)';
+  for(const bm of course.bumpers){ ctx.beginPath(); ctx.arc(mmX+(bm.x/course.W)*mmW, mmY+bm.y*ms, 1.6,0,7); ctx.fill(); }
+  ctx.strokeStyle='rgba(217,119,87,.85)'; ctx.lineWidth=1.4;
   ctx.strokeRect(mmX+1, mmY+camY*ms, mmW-2, VIS_H*ms);
-  // marble dots
   for(const o of marbles){ if(o.done)continue; const b=o.body;
-    ctx.fillStyle=colors[o.idx]; ctx.beginPath();
-    ctx.arc(mmX+(b.position.x/course.W)*mmW, mmY+b.position.y*ms, 2.4,0,7); ctx.fill(); }
-  // finished marker at bottom
-  ctx.fillStyle='#C15F3F'; ctx.beginPath();
-  ctx.arc(mmX+mmW/2, mmY+course.FINISH*ms, 2, 0, 7); ctx.fill();
+    ctx.fillStyle=colors[o.idx]; ctx.beginPath(); ctx.arc(mmX+(b.position.x/course.W)*mmW, mmY+b.position.y*ms, 2.3,0,7); ctx.fill(); }
+  ctx.strokeStyle='#C15F3F'; ctx.lineWidth=1.5; ctx.beginPath();
+  ctx.moveTo(mmX+2,mmY+course.FINISH*ms); ctx.lineTo(mmX+mmW-2,mmY+course.FINISH*ms); ctx.stroke();
 
-  // ---- live rank panel (top-left) ----
-  const order=liveOrder();
-  const rows=Math.min(order.length,6);
-  const pw=150, ph=20+rows*20, px=10, py=10;
+  // live rank panel
+  const order=liveOrder(), rows=Math.min(order.length,6);
+  const pw=152, ph=20+rows*20, px=10, py=10;
   ctx.fillStyle='rgba(46,42,36,.82)'; roundRect(px,py,pw,ph,12); ctx.fill();
   ctx.textAlign='left'; ctx.textBaseline='middle';
-  ctx.fillStyle='#F7F3EA'; ctx.font='800 12px sans-serif';
-  ctx.fillText('🏆 실시간 순위', px+12, py+13);
-  for(let i=0;i<rows;i++){
-    const o=order[i], yy=py+30+i*20;
+  ctx.fillStyle='#F7F3EA'; ctx.font='800 12px sans-serif'; ctx.fillText('🏆 실시간 순위', px+12, py+13);
+  for(let i=0;i<rows;i++){ const o=order[i], yy=py+30+i*20;
     ctx.fillStyle=colors[o.idx]; ctx.beginPath(); ctx.arc(px+16,yy,5,0,7); ctx.fill();
     ctx.fillStyle=o.done?'#E4A951':'#F2EADB'; ctx.font=(i===0?'800':'600')+' 12px sans-serif';
     const nm=labels[o.idx].length>7?labels[o.idx].slice(0,7)+'…':labels[o.idx];
-    ctx.fillText(`${i+1}. ${nm}`+(o.done?' ✅':''), px+28, yy);
-  }
+    ctx.fillText(`${i+1}. ${nm}`+(o.done?' ✅':''), px+28, yy); }
 
-  // ---- commentary ticker (bottom) ----
+  // commentary ticker
   const cy0=VH-40, cw=VW-20;
-  ctx.fillStyle='rgba(255,255,255,.85)'; roundRect(10,cy0,cw,32,12); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.9)'; roundRect(10,cy0,cw,32,12); ctx.fill();
   ctx.strokeStyle='rgba(46,42,36,.1)'; roundRect(10,cy0,cw,32,12); ctx.stroke();
   ctx.fillStyle='#5B8C7B'; ctx.font='800 13px sans-serif'; ctx.textAlign='left'; ctx.textBaseline='middle';
   ctx.fillText('🎙️', 20, cy0+16);
@@ -408,12 +402,10 @@ function drawHUD(){
   ctx.fillStyle='#2E2A24'; ctx.font='600 13px sans-serif';
   if(last) ctx.fillText(clip(last.t, cw-46), 44, cy0+16);
 
-  // ---- confetti (screen space) ----
   for(const c of confetti){ ctx.globalAlpha=Math.min(1,c.life/30); ctx.fillStyle=c.c;
     ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.rot); ctx.fillRect(-c.r,-c.r,c.r*2,c.r*2.6); ctx.restore(); }
   ctx.globalAlpha=1;
 
-  // timer
   ctx.fillStyle='rgba(46,42,36,.55)'; ctx.font='700 12px sans-serif'; ctx.textAlign='right'; ctx.textBaseline='top';
   ctx.fillText(((performance.now()-startTime)/1000).toFixed(1)+'s', mmX-6, 14);
 }
@@ -424,17 +416,16 @@ function liveOrder(){
 }
 function roundRect(x,y,w,h,r){ ctx.beginPath();
   if(ctx.roundRect){ctx.roundRect(x,y,w,h,r);return;}
-  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
-  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath(); }
 function clip(t,maxw){ ctx.font='600 13px sans-serif'; if(ctx.measureText(t).width<=maxw)return t;
   while(t.length>1 && ctx.measureText(t+'…').width>maxw) t=t.slice(0,-1); return t+'…'; }
 
 /* ===================== HUMOR ===================== */
 const START_LINES=['자, 마블들이 출발선에 섰습니다! 🎬','운명의 레이스, 지금 시작합니다','아무도 예측 못 하는 승부… 출발!','중력에게 모든 걸 맡깁니다'];
-const MID_LINES=['스피너에 얻어맞는 중 🌀','중력은 공평합니다','여기서 순위 다 뒤집힙니다','뒤엉킨 마블들, 아수라장'];
+const UPSET_LINES=['대역전! {n} 뒤에서 치고 올라온다 🚀','{n} 폭풍 추격, 순위 뒤집혔어요!','이게 되네?! {n} 대약진','{n} 스피너 타고 순삭 점프 ⚡','{n} 밑바닥에서 상위권으로!'];
 function arrivalLine(rank,total,name){
   if(rank===1) return pick([`🏁 ${name} 1등 골인! 밥 쏘세요`,`${name} 압도적 우승 👑`,`${name}, 로또도 사보세요`]);
-  if(rank===total) return pick([`${name} 대망의 꼴찌 🐢 수고했어요`,`${name}, 설거지 당첨을 축하합니다 🍽️`,`${name} 마지막 주자, 오늘의 주인공(?)`]);
+  if(rank===total) return pick([`${name} 대망의 꼴찌 🐢 수고했어요`,`${name}, 설거지 당첨 🍽️`,`${name} 마지막 주자, 오늘의 주인공(?)`]);
   if(rank===2) return pick([`${name} 아깝다! 은메달 🥈`,`${name}, 0.1초 차이의 한`]);
   if(rank===3) return pick([`${name} 동메달 획득 🥉`,`${name} 시상대 막차 탑승`]);
   return pick([`${name} ${rank}등으로 골인`,`${name}, 무난하게 ${rank}등`,`${name} 통과!`]);
@@ -452,20 +443,17 @@ function cmt(rank,total){ if(rank===1)return pick(FIRST); if(rank===total)return
 function medal(rank,total){ if(rank===1)return'🥇'; if(rank===2)return'🥈'; if(rank===3)return'🥉'; if(rank===total)return'🐢'; return rank+'등'; }
 function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function showResults(){
-  const list=setupEl('rankList'); list.innerHTML='';
+  const list=$('rankList'); list.innerHTML='';
   const total=finishOrder.length, secs=((performance.now()-startTime)/1000).toFixed(1);
-  finishOrder.forEach((idx,i)=>{
-    const rank=i+1, div=document.createElement('div');
+  finishOrder.forEach((idx,i)=>{ const rank=i+1, div=document.createElement('div');
     div.className='rank'+(rank===1?' top1':''); div.style.animationDelay=(i*0.06)+'s';
     div.innerHTML=`<div class="medal">${medal(rank,total)}</div>
       <div class="swatch" style="background:${colors[idx]}"></div>
       <div class="body"><div class="who">${rank}등 · ${escapeHtml(labels[idx])}</div>
       <div class="cmt">${cmt(rank,total)}</div></div>`;
-    list.appendChild(div);
-  });
-  setupEl('resSub').textContent=`🏆 ${labels[finishOrder[0]]} 님 우승! · ${total}명 · ${secs}초 레이스`;
-  elResults.style.display='block';
-  elResults.scrollIntoView({behavior:'smooth',block:'nearest'});
+    list.appendChild(div); });
+  $('resSub').textContent=`🏆 ${labels[finishOrder[0]]} 님 우승! · ${total}명 · ${secs}초 레이스`;
+  elResults.style.display='block'; elResults.scrollIntoView({behavior:'smooth',block:'nearest'});
   tone(880,0.18,0.05,'triangle');
 }
 
