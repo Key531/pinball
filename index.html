@@ -145,6 +145,7 @@ const elNumPane=$('numPane'), elNamePane=$('namePane'), elMNum=$('mNum'), elMNam
 let mode='num', soundOn=false, selectedSec=30;
 let course=null, marbles=[], finishOrder=[], labels=[], colors=[], running=false, raf=null, startTime=0;
 let camX=WORLD_W/2, camY=0, camZoom=1, camXT=WORLD_W/2, camYT=0, camZT=1, shakeMag=0, flash=0, zoomPunch=0;
+let lcamX=WORLD_W/2, lcamY=0;
 let sparks=[], confetti=[], commentary=[], lastLeader=-1, floaters=[];
 const baseScale=SCALE;
 let prevRank={}, rankCheck=0, lastCallout=0, finalRushSaid=false, tick=0;
@@ -258,6 +259,7 @@ function start(){
   elSetup.style.display='none'; elResults.style.display='none'; elStage.style.display='block';
   course=makeCourse(labels.length, secToK(selectedSec)); marbles=course.marbles;
   camX=WORLD_W/2; camY=VIS_H*0.5; camZoom=1; camXT=camX; camYT=camY; camZT=1; shakeMag=0; flash=0; zoomPunch=0;
+  lcamX=WORLD_W/2; lcamY=0;
   running=true; startTime=performance.now();
   say(pick(START_LINES));
   cancelAnimationFrame(raf); loop();
@@ -294,18 +296,17 @@ function loop(){
       if(lastLeader!==-1 && Math.random()<0.55) say(`선두 교체! ${labels[lead.idx]} 치고 나갑니다 🏎️`);
       lastLeader=lead.idx;
     }
-    // auto-frame the whole pack: spread out -> zoom out, bunched -> punch in
+    // MAIN cam frames the BATTLE PACK (trim breakaway leader + lone straggler); 1st is on the PiP cam
     const ys=act.map(o=>o.body.position.y).sort((a,b)=>a-b);
-    const front=ys[ys.length-1], back=ys[Math.floor(ys.length*0.2)];
-    let spread=front-back; if(spread<60)spread=60;
-    const desired=spread*1.35+300;
-    let zt=Math.max(0.8, Math.min(1.7, VH/(baseScale*desired)));
-    const prog=front/course.FINISH;
-    if(prog>0.9) zt=Math.max(zt,1.5);                // dramatic finish zoom
-    camZT=zt;
+    const xs=act.map(o=>o.body.position.x).sort((a,b)=>a-b);
+    const q=p=>ys[Math.min(ys.length-1,Math.max(0,Math.round((ys.length-1)*p)))];
+    const lo=q(0.15), hi=q(0.80);
+    let spread=hi-lo; if(spread<90)spread=90;
+    const desired=spread*1.5+300;
+    camZT=Math.max(0.8, Math.min(1.7, VH/(baseScale*desired)));
     const visH=VH/(baseScale*camZoom);
-    camXT = camZoom>1.15 ? lead.body.position.x : WORLD_W/2;
-    camYT = (front+back)/2 + 0.10*visH;
+    camXT = camZoom>1.2 ? xs[xs.length>>1] : WORLD_W/2;
+    camYT = (lo+hi)/2 + 0.06*visH;
   }
   // ease cinematic camera
   zoomPunch*=0.9; flash*=0.9; shakeMag*=0.86;
@@ -389,7 +390,16 @@ function render(){
   const shX=(Math.random()-.5)*shakeMag, shY=(Math.random()-.5)*shakeMag;
   ctx.save();
   ctx.translate(VW/2+shX, VH/2+shY); ctx.scale(scale,scale); ctx.translate(-camX,-camY);
-  const hH=(VH/2)/scale, yTop=camY-hH-20, yBot=camY+hH+20;
+  { const hH=(VH/2)/scale; drawScene(camY-hH-20, camY+hH+20); }
+  ctx.restore();
+  drawLeaderCam();
+  drawHUD();
+  drawBorder();
+  drawScanlines();
+  if(flash>0.02){ ctx.fillStyle='rgba(255,255,255,'+(flash*0.5).toFixed(3)+')'; ctx.fillRect(0,0,VW,VH); }
+}
+
+function drawScene(yTop,yBot){
 
   ctx.lineWidth=1; ctx.strokeStyle='rgba(90,225,255,.08)';
   const g0=Math.floor(yTop/70)*70; ctx.beginPath();
@@ -456,12 +466,29 @@ function render(){
   for(const f of floaters){ ctx.globalAlpha=Math.min(1,f.life/30); G(f.c,14); ctx.fillStyle='#fff';
     ctx.font='900 21px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(f.txt,f.x,f.y); noG(); }
   ctx.globalAlpha=1; ctx.textBaseline='alphabetic';
-  ctx.restore();
+}
 
-  drawHUD();
-  drawBorder();
-  drawScanlines();
-  if(flash>0.02){ ctx.fillStyle='rgba(255,255,255,'+(flash*0.5).toFixed(3)+')'; ctx.fillRect(0,0,VW,VH); }
+function drawLeaderCam(){
+  const act=marbles.filter(o=>!o.done);
+  let leader=null;
+  if(act.length){ leader=act[0]; for(const o of act) if(o.body.position.y>leader.body.position.y) leader=o; }
+  if(leader){ lcamX+=(leader.body.position.x-lcamX)*0.22; lcamY+=(leader.body.position.y-lcamY)*0.22; }
+  const pw=150, ph=118, px=VW-pw-8, py=10;
+  ctx.save();
+  ctx.fillStyle='#06010e'; roundRect(px,py,pw,ph,10); ctx.fill(); ctx.clip();
+  if(leader){
+    const s=ph/230;
+    ctx.translate(px+pw/2, py+ph/2+9); ctx.scale(s,s); ctx.translate(-lcamX,-lcamY);
+    const hH=(ph/2)/s;
+    drawScene(lcamY-hH-20, lcamY+hH+20);
+  }
+  ctx.restore();
+  ctx.fillStyle='rgba(6,1,14,.82)'; ctx.fillRect(px+1,py+1,pw-2,19);
+  G('#FFC21A',7); ctx.fillStyle='#FFD53D'; ctx.font='900 11px monospace'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  const nm=leader?labels[leader.idx]:(finishOrder.length?labels[finishOrder[0]]:'-');
+  ctx.fillText('🥇 1위  '+(nm.length>8?nm.slice(0,8)+'…':nm), px+8, py+11); noG();
+  G('#FFC21A',9); ctx.strokeStyle='#FFD53D'; ctx.lineWidth=1.6; roundRect(px,py,pw,ph,10); ctx.stroke(); noG();
+  ctx.textBaseline='alphabetic';
 }
 
 function drawFlippers(yTop,yBot){
@@ -487,7 +514,7 @@ function drawFlippers(yTop,yBot){
 function panel(x,y,w,h,r,accent){ ctx.fillStyle='rgba(8,4,18,.85)'; roundRect(x,y,w,h,r); ctx.fill();
   G(accent,10); ctx.strokeStyle=accent; ctx.lineWidth=1.2; roundRect(x,y,w,h,r); ctx.stroke(); noG(); }
 function drawHUD(){
-  const mmW=24, mmX=VW-mmW-8, mmY=10, mmH=VH-150, ms=mmH/course.H;
+  const mmW=24, mmX=VW-mmW-8, mmY=136, mmH=VH-186, ms=mmH/course.H;
   panel(mmX,mmY,mmW,mmH,8,'#16E0FF');
   ctx.fillStyle='rgba(90,225,255,.5)';
   for(const p of course.pegs){ ctx.fillRect(mmX+(p.x/course.W)*mmW-0.4, mmY+p.y*ms-0.4, .9,.9); }
@@ -523,8 +550,8 @@ function drawHUD(){
     ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.rot); ctx.fillRect(-c.r,-c.r,c.r*2,c.r*2.6); ctx.restore(); } noG();
   ctx.globalAlpha=1;
 
-  G('#FF2E97',6); ctx.fillStyle='#FF7AD9'; ctx.font='900 13px monospace'; ctx.textAlign='right'; ctx.textBaseline='top';
-  ctx.fillText(((performance.now()-startTime)/1000).toFixed(1)+'s', mmX-6, 14); noG();
+  G('#FF2E97',6); ctx.fillStyle='#FF7AD9'; ctx.font='900 14px monospace'; ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText(((performance.now()-startTime)/1000).toFixed(1)+'s', 230, 14); noG();
 }
 
 function drawBorder(){
